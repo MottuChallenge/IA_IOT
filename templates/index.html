@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MottuGrid - Detector de Placas</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <i class="fas fa-motorcycle"></i>
+                <h1>MottuGrid</h1>
+            </div>
+            <p class="subtitle">Detector Inteligente de Placas em Vídeos</p>
+        </header>
+
+        <!-- Formulário de Busca -->
+        <div class="search-section">
+            <div class="search-card">
+                <h2><i class="fas fa-search"></i> Buscar Placa</h2>
+                
+                <form id="searchForm" class="search-form">
+                    <div class="input-group">
+                        <label for="placa">Placa da Moto:</label>
+                        <input 
+                            type="text" 
+                            id="placa" 
+                            placeholder="Ex: ABC1234 ou ABC-1234"
+                            maxlength="8"
+                            required
+                        >
+                        <small>Digite a placa no formato brasileiro (3 letras + 4 números)</small>
+                    </div>
+                    
+                    <div class="input-group">
+                        <label for="threshold">Precisão da Busca:</label>
+                        <div class="slider-container">
+                            <input 
+                                type="range" 
+                                id="threshold" 
+                                min="0.5" 
+                                max="1.0" 
+                                step="0.1" 
+                                value="0.8"
+                            >
+                            <span id="thresholdValue">80%</span>
+                        </div>
+                        <small>Menor precisão = mais resultados, mas menos certeza</small>
+                    </div>
+                    
+                    <button type="submit" class="search-btn">
+                        <i class="fas fa-search"></i>
+                        Buscar Placa
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Loading -->
+        <div id="loading" class="loading hidden">
+            <div class="spinner"></div>
+            <p>Analisando vídeo... Isso pode levar alguns minutos.</p>
+        </div>
+
+        <!-- Resultados -->
+        <div id="results" class="results-section hidden">
+            <div class="results-header">
+                <h2><i class="fas fa-list-alt"></i> Resultados da Busca</h2>
+                <div id="summary" class="summary"></div>
+            </div>
+            
+            <div id="variationsInfo" class="variations-info"></div>
+            
+            <div id="detections" class="detections-grid"></div>
+        </div>
+
+        <!-- Mensagem de Erro -->
+        <div id="error" class="error-message hidden">
+            <i class="fas fa-exclamation-triangle"></i>
+            <span id="errorText"></span>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>&copy; 2025 MottuGrid - Tecnologia para Mobilidade Urbana</p>
+            <div class="api-status">
+                <span id="apiStatus">
+                    <i class="fas fa-circle"></i>
+                    Verificando API...
+                </span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Modal para visualizar imagens -->
+    <div id="imageModal" class="modal hidden">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <img id="modalImage" src="" alt="Imagem ampliada">
+            <div id="modalInfo" class="modal-info"></div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>
