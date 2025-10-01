@@ -1,3 +1,11 @@
+## 👥 INTEGRANTES DO GRUPO
+
+- RM559064 - Pedro Henrique dos Santos
+- RM556182 - Vinícius de Oliveira Coutinho
+- RM557992 - Thiago Thomaz Sales Conceição
+
+---
+
 # 🏍️ MottuGrid - Detector Inteligente de Placas
 
 ## 📋 Descrição do Projeto
