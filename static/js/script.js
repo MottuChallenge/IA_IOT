@@ -152,10 +152,11 @@ async function handleSearch(event) {
 }
 
 function displayResults(data) {
-    // Atualiza sumário
+    // Atualiza sumário (inclui contagem de motos únicas quando disponível)
     summaryDiv.innerHTML = `
         <i class="fas fa-check-circle"></i>
         <strong>${data.total_deteccoes}</strong> detecção(ões) encontrada(s) para a placa <strong>${data.placa_pesquisada}</strong>
+        ${data.moto_unicas !== undefined ? `<div style="margin-top:6px; font-size:0.95rem; color:#444;"><i class="fas fa-motorcycle"></i> ${data.moto_unicas} moto(s) única(s) detectada(s)</div>` : ''}
     `;
     
     // Exibe variações buscadas
@@ -163,6 +164,11 @@ function displayResults(data) {
     
     // Exibe detecções
     displayDetections(data.deteccoes);
+
+    // Exibe tracks de motos únicas (se houver)
+    if (data.motos_tracks && data.motos_tracks.length > 0) {
+        displayTracks(data.motos_tracks);
+    }
     
     // Mostra seção de resultados
     resultsDiv.classList.remove('hidden');
@@ -208,7 +214,7 @@ function displayDetections(deteccoes) {
     const detectionsHTML = deteccoes.map((deteccao, index) => `
         <div class="detection-card">
             <div class="detection-header">
-                <span class="detection-title">Detecção ${index + 1} - Frame ${deteccao.frame}</span>
+                <span class="detection-title">${deteccao.pass_order ? `Moto #${deteccao.pass_order} — ` : (deteccao.plate_rank ? `Moto #${deteccao.plate_rank} — ` : (deteccao.track_id ? `Moto #${deteccao.track_id} — ` : ''))}Detecção ${index + 1} - Frame ${deteccao.frame}</span>
                 <span class="similarity-badge">${Math.round(deteccao.similaridade * 100)}% de certeza</span>
             </div>
             
@@ -244,11 +250,38 @@ function displayDetections(deteccoes) {
                     <span class="info-label">Timestamp:</span>
                     <span class="info-value">${deteccao.timestamp}</span>
                 </div>
+                ${deteccao.centroid ? `
+                <div class="info-row">
+                    <span class="info-label">Posição (x,y):</span>
+                    <span class="info-value">${deteccao.centroid[0]}, ${deteccao.centroid[1]}</span>
+                </div>
+                ` : ''}
             </div>
         </div>
     `).join('');
     
     detectionsDiv.innerHTML = detectionsHTML;
+}
+
+function displayTracks(tracks) {
+    // Mostra uma lista de motos únicas (tracks) com posição inicial/final
+    const tracksContainerId = 'tracksListContainer';
+    let tracksHtml = `
+        <h3><i class="fas fa-route"></i> Motos únicas detectadas</h3>
+        <div id="${tracksContainerId}" class="tracks-list">
+            ${tracks.map(t => `
+                <div class="track-card">
+                    <div><strong>ID:</strong> ${t.id}</div>
+                    <div><strong>Primeira posição:</strong> ${t.first_pos[0]}, ${t.first_pos[1]}</div>
+                    <div><strong>Última posição:</strong> ${t.last_pos[0]}, ${t.last_pos[1]}</div>
+                    <div><strong>Frames vistos:</strong> ${t.first_frame} → ${t.last_frame} (${t.seen_count} vezes)</div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+
+    // Injeta abaixo das variações buscadas
+    variationsDiv.insertAdjacentHTML('afterend', tracksHtml);
 }
 
 function openModal(base64Image, title, detectionData) {
@@ -261,6 +294,7 @@ function openModal(base64Image, title, detectionData) {
         <h3>${title}</h3>
         <div class="modal-details">
             <p><strong>Frame:</strong> ${detection.frame}</p>
+            ${detection.track_id ? `<p><strong>Moto ID:</strong> ${detection.track_id}</p>` : ''}
             <p><strong>Texto OCR:</strong> ${detection.texto_ocr}</p>
             <p><strong>Texto Limpo:</strong> ${detection.texto_limpo}</p>
             <p><strong>Similaridade:</strong> ${Math.round(detection.similaridade * 100)}%</p>

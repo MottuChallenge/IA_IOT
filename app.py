@@ -56,6 +56,9 @@ def buscar_placa():
             'sucesso': resultado['sucesso'],
             'placa_pesquisada': resultado['placa_pesquisada'],
             'total_deteccoes': resultado['total_deteccoes'],
+            'moto_unicas': resultado.get('moto_unicas', 0),
+            'motos_tracks': resultado.get('motos_tracks', []),
+            'moto_passadas': resultado.get('moto_passadas', 0),
             'variacoes_buscadas': resultado['variacoes_buscadas'],
             'deteccoes': []
         }
@@ -72,6 +75,14 @@ def buscar_placa():
                 'frame_base64': deteccao['frame_base64'],
                 'moto_base64': deteccao['moto_base64']
             }
+            # Inclui dados de track/posição se disponíveis
+            if 'track_id' in deteccao:
+                deteccao_processada['track_id'] = deteccao['track_id']
+            if 'centroid' in deteccao:
+                deteccao_processada['centroid'] = deteccao['centroid']
+            # Inclui plate_rank (ordem de confirmação da placa) se disponível
+            if 'plate_rank' in deteccao:
+                deteccao_processada['plate_rank'] = deteccao['plate_rank']
             resposta['deteccoes'].append(deteccao_processada)
         
         # Log do resultado

@@ -8,7 +8,7 @@ import base64
 from datetime import datetime
 
 class PlacaDetector:
-    def __init__(self, video_path="teste.mp4", save_dir="prints_placa"):
+    def __init__(self, video_path="empresa_mottu.mp4", save_dir="prints_placa"):
         self.video_path = video_path
         self.save_dir = save_dir
         self.model = YOLO("yolov8n.pt")
@@ -139,6 +139,23 @@ class PlacaDetector:
         frame_num = 0
         deteccoes_encontradas = []
 
+        # Simple centroid-based tracker for motos to count unique veículos
+        tracks = []  # each track: {'id', 'last_pos':(x,y), 'first_pos':(x,y), 'last_frame', 'seen_count'}
+        next_track_id = 1
+        moto_events = []  # raw moto detections (frame, centroid, track_id)
+
+        # Plate ranking: quando uma placa é confirmada, atribuímos uma ordem (1,2,3...) baseada
+        # na ordem de confirmação de placas. Isso garante que a moto com placa confirmada
+        # receba um número consistente mesmo que o track_id mude por fragilidade do tracker.
+        plate_rank_counter = 0
+        plate_to_rank = {}  # mapa placa_limpa -> rank (int)
+
+        # Pass-order counting (linha virtual): conta motos quando o centro cruza uma linha
+        pass_counter = 0
+        # line position ratio (vertical position measured from top). 0.0 top, 1.0 bottom
+        count_line_ratio = 0.6
+        count_line_y = None  # será calculado ao ter frame
+
         while True:
             ret, frame = cap.read()
             if not ret:
@@ -156,6 +173,73 @@ class PlacaDetector:
                     if int(cls) == 3 and float(conf) > 0.5:  # Moto com boa confiança
                         x1, y1, x2, y2 = map(int, box)
                         moto_img = frame[y1:y2, x1:x2]
+
+                        # Calcula centro da bounding box (posição da moto)
+                        cx = int((x1 + x2) / 2)
+                        cy = int((y1 + y2) / 2)
+
+                        # Tenta associar a um track existente (distância euclidiana)
+                        assigned_track_id = None
+                        max_distance = 80  # pixels, heurística – ajustar conforme necessário
+                        max_frame_gap = 60  # frames sem ver o objeto para considerar perdido
+
+                        best_dist = None
+                        assigned_track = None
+                        for track in tracks:
+                            # Ignora tracks muito antigos
+                            if frame_num - track['last_frame'] > max_frame_gap:
+                                continue
+                            tx, ty = track['last_pos']
+                            dist = ((cx - tx) ** 2 + (cy - ty) ** 2) ** 0.5
+                            if dist <= max_distance and (best_dist is None or dist < best_dist):
+                                assigned_track_id = track['id']
+                                assigned_track = track
+                                best_dist = dist
+
+                        if assigned_track_id is None:
+                            # Novo veículo
+                            assigned_track_id = next_track_id
+                            tracks.append({
+                                'id': assigned_track_id,
+                                'first_pos': (cx, cy),
+                                'last_pos': (cx, cy),
+                                'first_frame': frame_num,
+                                'last_frame': frame_num,
+                                'seen_count': 1
+                            })
+                            next_track_id += 1
+                            # novo track reference
+                            assigned_track = tracks[-1]
+                        else:
+                            # Atualiza track existente
+                            # guarda posição anterior para detectar crossing
+                            prev_y = assigned_track['last_pos'][1]
+                            assigned_track['last_pos'] = (cx, cy)
+                            assigned_track['last_frame'] = frame_num
+                            assigned_track['seen_count'] += 1
+
+                            # calcula linha de contagem na primeira vez que tivermos frame
+                            if count_line_y is None:
+                                count_line_y = int(frame.shape[0] * count_line_ratio)
+
+                            # Verifica cruzamento da linha (qualquer direção)
+                            try:
+                                if (not assigned_track.get('counted', False)) and prev_y is not None and count_line_y is not None:
+                                    # cruzou de cima para baixo
+                                    if prev_y < count_line_y <= cy:
+                                        pass_counter += 1
+                                        assigned_track['pass_order'] = pass_counter
+                                        assigned_track['counted'] = True
+                                    # cruzou de baixo para cima
+                                    elif prev_y > count_line_y >= cy:
+                                        pass_counter += 1
+                                        assigned_track['pass_order'] = pass_counter
+                                        assigned_track['counted'] = True
+                            except Exception:
+                                pass
+
+                        # Guarda evento bruto de detecção de moto
+                        moto_events.append({'frame': frame_num, 'centroid': (cx, cy), 'track_id': assigned_track_id})
                         
                         if moto_img.size == 0:
                             continue
@@ -205,6 +289,26 @@ class PlacaDetector:
                                                 cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
                                     cv2.putText(frame_marcado, f"SIM: {similaridade:.0%}", (x1, y1 - 10),
                                                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+                                    # Adiciona informação do track/posição (ex.: MOTO #10)
+                                    try:
+                                        # Preferir mostrar pass_order (ordem de passagem) quando disponível
+                                        label_id = None
+                                        if assigned_track is not None and assigned_track.get('pass_order') is not None:
+                                            label_id = assigned_track.get('pass_order')
+                                        elif assigned_track is not None and assigned_track.get('plate_rank') is not None:
+                                            label_id = assigned_track.get('plate_rank')
+                                        elif assigned_track_id is not None:
+                                            label_id = assigned_track_id
+
+                                        if label_id is not None:
+                                            cv2.putText(frame_marcado, f"MOTO #{label_id}", (x1, y2 + 30),
+                                                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 0, 0), 2)
+                                        # Marca o centro da bounding box no frame completo
+                                        cv2.circle(frame_marcado, (cx, cy), 6, (0, 0, 255), -1)
+                                        cv2.putText(frame_marcado, f"({cx},{cy})", (cx + 8, cy + 8),
+                                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                                    except Exception:
+                                        pass
                                     
                                     # Nomes dos arquivos
                                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -215,7 +319,21 @@ class PlacaDetector:
                                     
                                     # Salva imagens
                                     cv2.imwrite(arquivo_frame, frame_marcado)
-                                    cv2.imwrite(arquivo_moto, moto_img)
+                                    # Adiciona marcação simples também na imagem recortada da moto
+                                    try:
+                                        moto_marcada = moto_img.copy()
+                                        # Centro relativo na imagem recortada
+                                        rel_cx = cx - x1
+                                        rel_cy = cy - y1
+                                        if 0 <= rel_cx < moto_marcada.shape[1] and 0 <= rel_cy < moto_marcada.shape[0]:
+                                            cv2.circle(moto_marcada, (rel_cx, rel_cy), 5, (0, 0, 255), -1)
+                                            if assigned_track_id is not None:
+                                                cv2.putText(moto_marcada, f"MOTO #{assigned_track_id}", (5, 20),
+                                                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
+                                        cv2.imwrite(arquivo_moto, moto_marcada)
+                                    except Exception:
+                                        # Fallback: salva sem marcação
+                                        cv2.imwrite(arquivo_moto, moto_img)
                                     
                                     # Converte para base64
                                     frame_b64 = self.image_to_base64(arquivo_frame)
@@ -234,7 +352,32 @@ class PlacaDetector:
                                         'moto_base64': moto_b64,
                                         'timestamp': timestamp
                                     }
-                                    
+                                    # Atribui um 'rank' para a placa quando confirmada (ordem de confirmação)
+                                    try:
+                                        placa_key = texto_limpo
+                                        if placa_key in plate_to_rank:
+                                            plate_rank = plate_to_rank[placa_key]
+                                        else:
+                                            plate_rank_counter += 1
+                                            plate_rank = plate_rank_counter
+                                            plate_to_rank[placa_key] = plate_rank
+
+                                        deteccao['plate_rank'] = plate_rank
+
+                                        # Vincula rank ao track, se existir
+                                        if assigned_track is not None:
+                                            assigned_track['plate_rank'] = plate_rank
+                                    except Exception:
+                                        pass
+                                    # Anexa informações do track/posição se disponível
+                                    try:
+                                        deteccao['track_id'] = assigned_track_id
+                                        deteccao['centroid'] = (cx, cy)
+                                        if assigned_track is not None and assigned_track.get('pass_order') is not None:
+                                            deteccao['pass_order'] = assigned_track.get('pass_order')
+                                    except:
+                                        pass
+
                                     deteccoes_encontradas.append(deteccao)
                         
                         except Exception as e:
@@ -249,7 +392,11 @@ class PlacaDetector:
             'total_deteccoes': len(deteccoes_encontradas),
             'deteccoes': deteccoes_encontradas,
             'variacoes_buscadas': self.gera_variacoes_placa(placa_alvo),
-            'sucesso': len(deteccoes_encontradas) > 0
+            'sucesso': len(deteccoes_encontradas) > 0,
+            'moto_unicas': len(tracks),
+            'motos_tracks': tracks,
+            'moto_events': moto_events,
+            'moto_passadas': pass_counter
         }
         
         return resultado
